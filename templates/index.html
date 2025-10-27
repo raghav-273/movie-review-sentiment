@@ -1,0 +1,155 @@
+<!-- templates/index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Movie Review Sentiment Analyzer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* small local overrides / safety */
+    body { font-family: Arial, sans-serif; background:#f0f4f8; margin:0; padding:0; }
+    .container { max-width:720px; margin:48px auto; background:#fff; padding:28px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.07); }
+    h1 { text-align:center; color:#111; margin:0 0 6px; font-size:24px; }
+    p.model { text-align:center; color:#555; margin:0 0 18px; font-weight:600; }
+    textarea { width:100%; padding:14px; border-radius:8px; border:1px solid #d6dce6; resize:vertical; min-height:120px; font-size:15px; }
+    .controls { text-align:center; margin-top:14px; }
+    button { padding:10px 22px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-size:15px; cursor:pointer; transition:background .18s ease; }
+    button[disabled] { opacity:.65; cursor:wait; }
+    .result { margin-top:18px; font-size:16px; text-align:center; padding:12px; border-radius:8px; }
+    .result.positive { background:#ecfdf5; color:#065f46; }
+    .result.negative { background:#fff1f2; color:#7f1d1d; }
+    .result.neutral { background:#fffbeb; color:#92400e; }
+    #probabilities { margin-top:14px; }
+    #probabilities div { margin:8px 0; font-weight:600; display:flex; align-items:center; gap:10px; }
+    .bar { height:14px; border-radius:8px; display:inline-block; vertical-align:middle; }
+    .label { min-width:80px; font-weight:600; color:#333; }
+    #wordcloud-container { text-align:center; margin-top:18px; }
+    #wc_img { margin-top:10px; max-width:420px; width:100%; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.06); }
+    #keywords { text-align:center; margin-top:12px; color:#444; font-style:italic; }
+    .meta { text-align:center; color:#6b7280; margin-top:8px; font-size:13px; }
+    .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(0,0,0,0.12); border-top-color:#2563eb; border-radius:50%; animation:spin .9s linear infinite; vertical-align:middle; margin-left:8px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Movie Review Sentiment Analyzer</h1>
+    <p class="model">Model: <strong>{{ model_choice|upper }}</strong></p>
+
+    <form id="sentForm">
+      <textarea id="review" name="review" placeholder="Paste movie review here..."></textarea>
+      <div class="controls">
+        <button id="analyzeBtn" type="submit">Analyze</button>
+      </div>
+    </form>
+
+    <div id="result" class="result" aria-live="polite"></div>
+    <div id="probabilities" aria-live="polite"></div>
+    <div id="wordcloud-container">
+      <h3 style="margin-bottom:6px;">Word Cloud</h3>
+      <img id="wc_img" alt="word cloud will appear here" />
+    </div>
+    <p id="keywords"></p>
+    <div id="metrics" style="text-align:center; margin-top:12px; color:#333"></div>
+    <p class="meta"> Made by - </br> Raghav Mishra & Shankaraditya Kompella </br> CSE - AI  </p>
+  </div>
+
+  <script>
+    const form = document.getElementById('sentForm');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const resultDiv = document.getElementById('result');
+    const probsDiv = document.getElementById('probabilities');
+    const wcImg = document.getElementById('wc_img');
+    const keywordsP = document.getElementById('keywords');
+    const metricsDiv = document.getElementById('metrics');
+
+    function setLoading(on) {
+      analyzeBtn.disabled = on;
+      analyzeBtn.innerHTML = on ? 'Analyzing <span class="spinner"></span>' : 'Analyze';
+    }
+
+    function safePercent(x) {
+      if (typeof x !== 'number' || !isFinite(x)) return 0;
+      return Math.max(0, Math.min(100, x*100));
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = document.getElementById('review').value.trim();
+      if (!text) { alert('Please enter a review.'); return; }
+
+      setLoading(true);
+      resultDiv.textContent = '';
+      probsDiv.innerHTML = '';
+      wcImg.src = ''; keywordsP.textContent = '';
+
+      try {
+        const formData = new FormData();
+        formData.append('review', text);
+
+        const resp = await fetch('/predict', { method: 'POST', body: formData });
+        if (!resp.ok) throw new Error('Server returned ' + resp.status);
+        const data = await resp.json();
+
+        // safety: ensure numeric probs
+        const pPos = ('prob_pos' in data) ? Number(data.prob_pos) : (('score' in data) ? Number(data.score) : 0);
+        const pNeg = ('prob_neg' in data) ? Number(data.prob_neg) : Math.max(0, 1 - pPos);
+        const pNeutral = ('prob_neutral' in data) ? Number(data.prob_neutral) : Math.max(0, 1 - (pPos + pNeg));
+
+        // render main result
+        resultDiv.innerHTML = `<strong>Prediction:</strong> ${data.label || 'Unknown'} <br><strong>Confidence:</strong> ${safePercent(pPos).toFixed(1)}%`;
+        resultDiv.className = 'result ' + (String(data.label || '').toLowerCase());
+
+        // render probability bars
+        probsDiv.innerHTML = `
+          <div><span class="label">Positive</span><span class="bar" style="background:#34d399; width:${safePercent(pPos).toFixed(0)}%"></span><span style="margin-left:10px">${safePercent(pPos).toFixed(1)}%</span></div>
+          <div><span class="label">Negative</span><span class="bar" style="background:#f87171; width:${safePercent(pNeg).toFixed(0)}%"></span><span style="margin-left:10px">${safePercent(pNeg).toFixed(1)}%</span></div>
+          <div><span class="label">Neutral</span><span class="bar" style="background:#facc15; width:${safePercent(pNeutral).toFixed(0)}%"></span><span style="margin-left:10px">${safePercent(pNeutral).toFixed(1)}%</span></div>
+        `;
+
+        // word cloud (if provided)
+        if (data.wordcloud) {
+          wcImg.src = data.wordcloud;
+        } else {
+          wcImg.removeAttribute('src');
+          wcImg.alt = 'No word cloud available';
+        }
+
+        // keywords (if provided)
+        if (data.keywords) {
+          keywordsP.innerHTML = `<strong>Top keywords:</strong> ${data.keywords}`;
+        } else {
+          keywordsP.textContent = '';
+        }
+
+        // show precomputed model metrics (if provided)
+        if (data.metrics && data.metrics.accuracy !== null) {
+          // defensive cast to numbers
+          const acc = Number(data.metrics.accuracy);
+          const prec = Number(data.metrics.precision);
+          const rec = Number(data.metrics.recall);
+          const f1 = Number(data.metrics.f1);
+
+          metricsDiv.innerHTML = `
+            <div><strong>Model metrics (test):</strong>
+              Accuracy: ${(acc*100).toFixed(2)}% &nbsp; — &nbsp;
+              F1: ${f1.toFixed(3)} &nbsp; — &nbsp;
+              Precision: ${prec.toFixed(3)} &nbsp; — &nbsp;
+              Recall: ${rec.toFixed(3)}
+            </div>
+          `;
+        } else {
+          metricsDiv.textContent = '';
+        }
+        
+      
+      } catch (err) {
+        console.error(err);
+        alert('Error: ' + (err.message || 'Could not contact server. Make sure Flask is running at http://127.0.0.1:5000'));
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+</html>
