@@ -9,6 +9,8 @@ Supports two backends:
 
 Built with Flask for a clean and fast web interface. Easy to use!
 
+Used dataset of 50,000 reviews from IMDB to train and test.
+
 Setup
 	1.	python3 -m venv venv  (create a virtual environment)
 	2.	source venv/bin/activate  (Windows: .\venv\Scripts\Activate.ps1)
@@ -25,5 +27,13 @@ Files
 
 Notes
 	•	Change MODEL_CHOICE in app.py to switch between models.
-	•	First run with sklearn will download NLTK corpora and train the model — phir model/sentiment_model.pkl save ho jayega.
+	•	First run with sklearn will download NLTK corpora and train the model — then model/sentiment_model.pkl will get saved .
 	•	VADER works out-of-the-box, no training needed.
+
+Example
+
+	Input:
+	“The movie was beautifully directed and emotionally engaging.”
+	
+	Output:
+	Sentiment: Positive
