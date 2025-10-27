@@ -38,4 +38,4 @@ Example
 	Output:
 	Sentiment: Positive
 
-
+further results (screenshots) are saved in immages -> results folder
